@@ -1,0 +1,22 @@
+# Copy this file to config.toml or ~/.config/notion-cal-sync/config.toml and fill your values.
+
+notion_token = "secret_xxx"        # Notion internal integration token
+database_id = "xxxxxxxxxxxxxxxxxx" # Target Notion database ID
+
+# Optional: Override the title property name
+title_property = "Task name"       # Notion title property name (defaults to "Name")
+
+# Exporter configurations
+[exporters.apple_calendar]
+calendar_name = "Notion Task"      # Calendar name to create/use in Apple Calendar
+skip_completed = true              # Whether to skip completed tasks (Status = "Done")
+event_prefix = "[Notion] "         # Prefix to add to event titles
+account_name = "iCloud"            # Optional: Specify which account to use (iCloud, Local, etc.)
+                                   # Run 'python list_calendar_accounts.py' to see available accounts
+                                   # If not specified, priority: iCloud > Local > First available
+                                   # All events are created as all-day events
+
+# Future exporter example:
+# [exporters.things]
+# list_name = "Notion Tasks"
+# skip_completed = true

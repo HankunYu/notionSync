@@ -1,0 +1,4 @@
+notion-client>=2.2.1
+toml
+httpx
+pyobjc-framework-EventKit>=12.1
