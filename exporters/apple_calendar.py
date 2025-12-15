@@ -62,25 +62,78 @@ class AppleCalendarExporter(TaskExporter):
         Returns:
             True if access granted, False otherwise
         """
+        # Initialize event store if needed
         if self.event_store is None:
             self.event_store = EKEventStore.alloc().init()
 
         # Check current authorization status
-        # For macOS < 14, use requestAccessToEntityType_completion_
-        # For macOS >= 14, use requestFullAccessToEventsWithCompletion_
-        import platform
-        macos_version = tuple(map(int, platform.mac_ver()[0].split('.')[:2]))
+        status = EKEventStore.authorizationStatusForEntityType_(0)  # 0 = EKEntityTypeEvent
 
-        # Try to use the event store directly
-        # If access is needed, the system will prompt automatically
-        try:
-            # Attempt to access calendars - this will trigger permission prompt if needed
-            calendars = self.event_store.calendarsForEntityType_(0)  # 0 = EKEntityTypeEvent
-            return True
-        except Exception as e:
-            print(f"Calendar access error: {e}")
-            print("Please grant calendar access in System Settings > Privacy & Security > Calendars")
+        # Status codes:
+        # 0 = Not Determined, 1 = Restricted, 2 = Denied, 3+ = Authorized
+        if status == 2:  # Denied
+            print("❌ Calendar access was denied.")
+            print("Please enable calendar access in:")
+            print("System Settings > Privacy & Security > Calendars > Python/Terminal")
             return False
+        elif status == 1:  # Restricted
+            print("❌ Calendar access is restricted by system policy.")
+            return False
+        elif status >= 3:  # Already authorized
+            return True
+
+        # Status is 0 (Not Determined) - need to request permission
+        print("🔐 Requesting calendar access...")
+        print("⚠️  A permission dialog should appear. Please click 'Allow'")
+        print("⚠️  Note: The dialog might appear behind other windows - check all spaces/desktops")
+
+        # Use RunLoop to ensure the callback is processed
+        from Foundation import NSRunLoop, NSDefaultRunLoopMode, NSDate
+        import time
+
+        access_granted = [False]
+        request_completed = [False]
+
+        def completion_handler(granted, error):
+            access_granted[0] = granted
+            request_completed[0] = True
+            if error:
+                print(f"Permission error: {error}")
+
+        # Request access
+        self.event_store.requestAccessToEntityType_completion_(0, completion_handler)
+
+        # Run the run loop to process the callback
+        timeout = 60  # 60 seconds timeout
+        start_time = time.time()
+
+        while not request_completed[0] and (time.time() - start_time) < timeout:
+            # Run the run loop for a short time to process callbacks
+            NSRunLoop.currentRunLoop().runMode_beforeDate_(
+                NSDefaultRunLoopMode,
+                NSDate.dateWithTimeIntervalSinceNow_(0.1)
+            )
+
+        if not request_completed[0]:
+            print("\n❌ Permission request timed out or no dialog appeared.")
+            print("\n💡 Manual authorization required:")
+            print("   1. Open the Calendar app (to ensure calendar system is initialized)")
+            print("   2. Open System Settings > Privacy & Security > Calendars")
+            print("   3. Look for 'Python' or 'Terminal' or 'python3' in the list")
+            print("   4. Enable calendar access")
+            print("   5. If not in the list, you may need to run this from within an app")
+            print("      or grant permission to Terminal itself")
+            print("\n💡 Alternative: Try running with 'sudo' or from a GUI application")
+            return False
+
+        if not access_granted[0]:
+            print("\n❌ Calendar access was denied.")
+            print("\n💡 To enable access:")
+            print("   System Settings > Privacy & Security > Calendars > Enable for Python/Terminal")
+            return False
+
+        print("✅ Calendar access granted!")
+        return True
 
     def _get_or_create_calendar(self) -> bool:
         """Get the target calendar or create it if it doesn't exist.
