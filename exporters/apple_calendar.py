@@ -32,13 +32,11 @@ class AppleCalendarExporter(TaskExporter):
             config: Configuration dictionary with optional keys:
                 - calendar_name: Name of the calendar to use (default: "Notion Tasks")
                 - default_duration_hours: Duration for tasks without end date (default: 1)
-                - skip_completed: Whether to skip completed tasks (default: True)
                 - event_prefix: Prefix to add to event titles (default: "[Notion] ")
         """
         super().__init__(config)
         self.calendar_name = self.config.get("calendar_name", "Notion Tasks")
         self.default_duration_hours = self.config.get("default_duration_hours", 1)
-        self.skip_completed = self.config.get("skip_completed", True)
         self.event_prefix = self.config.get("event_prefix", "[Notion] ")
 
         self.event_store = None
@@ -304,6 +302,29 @@ class AppleCalendarExporter(TaskExporter):
             print(f"Error updating event for '{task_data['title']}': {e}")
             return False
 
+    def _delete_event(self, event_id: str) -> bool:
+        """Delete a calendar event by its ID.
+
+        Args:
+            event_id: Calendar event ID
+
+        Returns:
+            True if event deleted successfully, False otherwise
+        """
+        try:
+            event = self._get_event_by_id(event_id)
+            if not event:
+                return True  # Already gone
+
+            error = None
+            success = self.event_store.removeEvent_span_commit_error_(event, 0, True, error)
+            if not success:
+                print(f"Failed to delete event {event_id}: {error}")
+            return success
+        except Exception as e:
+            print(f"Error deleting event {event_id}: {e}")
+            return False
+
     def _create_event(self, task_data: Dict[str, Any]) -> str | None:
         """Create a calendar event from task data.
 
@@ -315,10 +336,6 @@ class AppleCalendarExporter(TaskExporter):
         """
         # Skip if no due date
         if not task_data.get("due_start"):
-            return None
-
-        # Skip completed tasks if configured
-        if self.skip_completed and task_data.get("status") == "Done":
             return None
 
         # Create event
@@ -382,6 +399,7 @@ class AppleCalendarExporter(TaskExporter):
             "created": 0,
             "updated": 0,
             "skipped": 0,
+            "deleted": 0,
             "errors": [],
         }
 
@@ -406,12 +424,22 @@ class AppleCalendarExporter(TaskExporter):
                 notion_id = task.get("id")
                 task_data = self.extract_task_data(task)
 
-                # Check if we should skip this task
-                if not task_data.get("due_start"):
-                    result["skipped"] += 1
+                # Delete calendar event if task is Done or Archive
+                if task_data.get("status") in ("Done", "Archived"):
+                    event_id = self.cache.get_external_id(notion_id)
+                    if event_id:
+                        if self._delete_event(event_id):
+                            self.cache.remove_entry(notion_id)
+                            result["deleted"] += 1
+                            print(f"  Deleted event for completed task: {task_data['title']}")
+                        else:
+                            result["errors"].append(f"Failed to delete event for '{task_data['title']}'")
+                    else:
+                        result["skipped"] += 1
                     continue
 
-                if self.skip_completed and task_data.get("status") == "Done":
+                # Check if we should skip this task (no due date)
+                if not task_data.get("due_start"):
                     result["skipped"] += 1
                     continue
 

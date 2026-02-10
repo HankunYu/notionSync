@@ -327,6 +327,7 @@ def main() -> None:
         print(f"  Success: {result['success']}")
         print(f"  Created: {result['created']}")
         print(f"  Updated: {result['updated']}")
+        print(f"  Deleted: {result.get('deleted', 0)}")
         print(f"  Skipped: {result['skipped']}")
 
         if result['errors']:
